@@ -34,8 +34,8 @@ function _8086:parse_to_asm(file_url, file_name)
         local cmd = {
             -- isolate the a//b bytes for this instruction and hand them to the interpreter
             table.insert(cmd_list, _8086:parse(
-                to_binary(string.byte(file_data, index, index)),
-                to_binary(string.byte(file_data, index + 1, index + 1))
+                _8086:to_binary(string.byte(file_data, index, index)),
+                _8086:to_binary(string.byte(file_data, index + 1, index + 1))
             ))
         }
     end
@@ -44,7 +44,7 @@ function _8086:parse_to_asm(file_url, file_name)
         -- print("(" .. i .. ") --> " .. cmd_list[i])
         asm_string = asm_string .. cmd_list[i] .. "\n"
     end
-    
+
     -- "open a new file ion write mode (w)"
     local file_url = "output/" .. file_name .. ".asm"
     local new_file = io.open(file_url, "w")
@@ -55,6 +55,15 @@ function _8086:parse_to_asm(file_url, file_name)
 
     print("COMPILED ASM TO: " .. file_url)
     print("data: " .. asm_string)
+end
+
+function _8086:to_binary(number)
+    local remainder = ""
+    while number > 0 do
+        remainder = tostring(number % 2) .. remainder
+        number = math.floor(number / 2)
+    end
+    return remainder
 end
 
 --//////////////////////////////////////////////
