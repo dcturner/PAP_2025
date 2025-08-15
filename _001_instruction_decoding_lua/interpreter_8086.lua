@@ -13,29 +13,58 @@ function _8086:parse(byte_a, byte_b)
         r_m = string.sub(byte_b, 6, 8)
     }
 
-    -- 100010   OP_CODE
-    -- 0        D
-    -- 1        W
-    -- 11       MOD
-    -- 011      REG
-    -- 001      R_M
-
-    print("PARSING... a: " .. byte_a .. ", b: " .. byte_b)
-    local str_op_code = "" .. _8086:opcode(cmd.op_code) .. " "
+    -- Parse the 3 separate parts and concat them into an asm instruction line
+    local str_op_code = "" .. _8086.OP_CODE[cmd.op_code]
     local str_op_a = _8086.MOD_LOOKUP[cmd.mod][cmd.r_m][cmd.w + 1]
     local str_op_b = _8086.MOD_LOOKUP[cmd.mod][cmd.reg][cmd.w + 1]
-    return str_op_code .. str_op_a .. ", " .. str_op_b
+    return str_op_code .. " " .. str_op_a .. ", " .. str_op_b
 end
 
+function _8086:get_op_code(input)
+    return _8086.OP_CODE[input]
+end
+
+function _8086:parse_to_asm(file_url, file_name)
+    local file_handle = assert(io.open(file_url, 'rb'))
+    local file_data = file_handle:read("*all")
+    local cmd_count = math.floor(#file_data / 2)
+    local cmd_list = {}
+    for i = 1, cmd_count do
+        local index = (i * 2) - 1
+        local cmd = {
+            -- isolate the a//b bytes for this instruction and hand them to the interpreter
+            table.insert(cmd_list, _8086:parse(
+                to_binary(string.byte(file_data, index, index)),
+                to_binary(string.byte(file_data, index + 1, index + 1))
+            ))
+        }
+    end
+    local asm_string = "bits 16\n\n"
+    for i = 1, #cmd_list do
+        -- print("(" .. i .. ") --> " .. cmd_list[i])
+        asm_string = asm_string .. cmd_list[i] .. "\n"
+    end
+    
+    -- "open a new file ion write mode (w)"
+    local file_url = "output/" .. file_name .. ".asm"
+    local new_file = io.open(file_url, "w")
+    if (new_file) then
+        new_file:write(asm_string)
+        new_file:close();
+    end
+
+    print("COMPILED ASM TO: " .. file_url)
+    print("data: " .. asm_string)
+end
+
+--//////////////////////////////////////////////
+-- DEFINITIONS
+--//////////////////////////////////////////////
 _8086.OP_CODE = {
     ["100010"] = "mov",
     ["101011"] = "shite",
     ["0110"] = "arse",
 }
-function _8086:opcode(input)
-    return _8086.OP_CODE[input]
-end
-
 _8086.REG_ENCODING_MOD_11 = {
     ["000"] = { "al", "ax" },
     ["001"] = { "cl", "cx" },

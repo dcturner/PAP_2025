@@ -28,28 +28,32 @@ MIF_FIELDS = { "op_code", "d", "w", "mod", "reg", "r_m" }
 -- START
 --//////////////////////////////////////////////
 
--- LOAD FILE
--- FILE_NAME = "asm/listing_0037_single_register_mov"
-FILE_NAME = "asm/listing_0038_many_register_mov"
-FILE_HANDLE = assert(io.open(FILE_NAME, 'rb'))
-DATA_TXT = FILE_HANDLE:read("*all")
+_8086:parse_to_asm("asm/listing_0037_single_register_mov", "_0037_single")
+_8086:parse_to_asm("asm/listing_0038_many_register_mov", "_0038_multiple")
 
--- How many commands? (2 chars per cmd)
-CMD_COUNT = math.floor(#DATA_TXT / 2)
+-- -- LOAD FILE
+-- -- FILE_NAME = "asm/listing_0037_single_register_mov"
+-- FILE_NAME = "asm/listing_0038_many_register_mov"
+-- FILE_HANDLE = assert(io.open(FILE_NAME, 'rb'))
+-- DATA_TXT = FILE_HANDLE:read("*all")
 
--- Add each 2byte command into a command list
-CMD_LIST = {}
-OUTPUT = {}
-for i = 1, CMD_COUNT do
-  local index = (i * 2) - 1
-  local cmd = {
-    -- isolate the a//b bytes for this instruction and hand them to the interpreter
-    table.insert(CMD_LIST, _8086:parse(
-      to_binary(string.byte(DATA_TXT, index, index)),
-      to_binary(string.byte(DATA_TXT, index + 1, index + 1))
-    ))
-  }
-  for i = 1, #CMD_LIST do
-    print("(" .. i .. ") --> " .. CMD_LIST[i])
-  end
-end
+-- -- How many commands? (2 chars per cmd)
+-- CMD_COUNT = math.floor(#DATA_TXT / 2)
+
+-- -- Add each 2byte command into a command list
+-- CMD_LIST = {}
+-- OUTPUT = {}
+-- for i = 1, CMD_COUNT do
+--   local index = (i * 2) - 1
+--   local cmd = {
+--     -- isolate the a//b bytes for this instruction and hand them to the interpreter
+--     table.insert(CMD_LIST, _8086:parse(
+--       to_binary(string.byte(DATA_TXT, index, index)),
+--       to_binary(string.byte(DATA_TXT, index + 1, index + 1))
+--     ))
+--   }
+
+--   for i = 1, #CMD_LIST do
+--     print("(" .. i .. ") --> " .. CMD_LIST[i])
+--   end
+-- end
