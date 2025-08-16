@@ -202,8 +202,9 @@ _8086.OP_CODES = {
         },
         parser = _8086.parse_mov_REG_2_REG,
     },
+    -- TODO: Add configs for other MOV types
     ["1100011"] = { type = "mov", id = "MOV IMM_2_RM" },
-    ["1011"] = { type = "mov", id = "MOV IMM 2 REG" },
+    ["1011"] = { type = "mov", id = "MOV IMM_2_REG" },
 }
 _8086.REG_ENCODING_MOD_00 = {
     extra_bytes = 0, -- unless R_M is 110 (TODO)
