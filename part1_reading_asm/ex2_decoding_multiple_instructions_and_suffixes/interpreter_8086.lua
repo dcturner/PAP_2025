@@ -9,43 +9,81 @@ TASKS
 --]]
 
 function _8086:parse_to_asm(file_url, file_name)
-
     -- load file and get number of commands
     local file_handle = assert(io.open(file_url, 'rb'), "Failed to open file: " .. file_url)
-    local file_data = file_handle:read("*all")
-    print("PARSE ASM FILE: '" .. file_name .. "' ...")
+    _8086.file_data = file_handle:read("*all")
+    print("\n\n----> PARSE ASM FILE: '" .. file_name .. "' ...")
 
     -- move through the buffer and identify new commands in chunks
-    _8086.buffer_current_byte = 1
+    _8086.CMD_LIST = {}
+    _8086.byte_index = 1
     _8086.cmd_counter = 1
-    local cmd_config = _8086:get_cmd_config(string.byte(file_data))
-    
-    -- ID cmd and check how many bytes this op will need
+
+    while (_8086.byte_index <= #_8086.file_data) do
+        -- init and setup the basic OP type
+        _8086:init_cmd(string.byte(_8086.file_data, _8086.byte_index, _8086.byte_index))
+
+        local bytes_req = _8086:get_required_bytes()
+
+        -- add next two
+        local mod = _8086:get_cmd_field("mod")
+        local reg = _8086:get_cmd_field("reg")
+        local r_m = _8086:get_cmd_field("r_m")
+        local w = _8086:get_cmd_field("w")
+        local str_op_a = _8086.MOD_LOOKUP[mod][r_m][w + 1]
+        local str_op_b = _8086.MOD_LOOKUP[mod][reg][w + 1]
+
+        -- store the string in the cmd list
+        local final_line = _8086.CMD_STATE.type .. " " .. str_op_a .. ", " .. str_op_b
+        print("CMD[" .. _8086.cmd_counter .. "] --> " .. final_line )
+        table.insert(_8086.CMD_LIST, final_line)
+
+        -- march on...
+        _8086.byte_index = _8086.byte_index + bytes_req
+        _8086.cmd_counter = _8086.cmd_counter + 1
+    end
+    print("PARSE COMPLETE: " .. _8086.cmd_counter .. " command lines")
 
 
-    -- loop on through the buffer here
+    -- Build the master string and WRITE it to ASM
+    local asm_string = "bits 16\n\n"
+    for i = 1, #_8086.CMD_LIST do
+        asm_string = asm_string .. _8086.CMD_LIST[i] .. "\n"
+    end
+    _8086:write_asm(asm_string, file_name)
+end
 
+--/////////////////////////////////////
+-- BINARY HELPERS
+--/////////////////////////////////////
 
-    -- local cmd_list = {}
-    -- for i = 1, cmd_count do
-    --     local index = (i * 2) - 1
-    --     local cmd_byte_1 = _8086:to_binary(string.byte(file_data, index, index))
-    --     local op_code_length = _8086:get_op_code_size(cmd_byte_1)
-    --     local cmd_config = _8086:get_op_code_config(cmd_byte_1)
-    --     print("CMD_" .. i .. ": " .. op_code_length)
-    --     local cmd = {
-    --         -- isolate the a//b bytes for this instruction and hand them to the interpreter
-    --         table.insert(cmd_list, _8086:parse(
-    --             _8086:to_binary(string.byte(file_data, index, index)),
-    --             _8086:to_binary(string.byte(file_data, index + 1, index + 1))
-    --         ))
-    --     }
-    -- end
-    -- local asm_string = "bits 16\n\n"
-    -- for i = 1, #cmd_list do
-    --     asm_string = asm_string .. cmd_list[i] .. "\n"
-    -- end
-    -- _8086:write_asm(asm_string, file_name)
+function _8086:to_binary(number)
+    local remainder = ""
+    while number > 0 do
+        remainder = tostring(number % 2) .. remainder
+        number = math.floor(number / 2)
+    end
+    return remainder
+end
+
+function _8086:byte_as_binary(index)
+    -- Safety checks
+    assert(_8086.file_data ~= nil, "FILE DATA NIL")
+    assert(index ~= nil, "INDEX IS NIL")
+    assert(index <= #_8086.file_data,
+        "INDEX " .. tostring(index) .. " OUT OF BOUNDS (file length: " .. #_8086.file_data .. ")")
+
+    local byte_value = string.byte(_8086.file_data, index)
+    return _8086:to_binary(byte_value)
+end
+
+function _8086:bytes_as_binary(index, length)
+    local result = ""
+
+    for i = 1, length do
+        result = result .. _8086:byte_as_binary(index + (i - 1))
+    end
+    return result
 end
 
 function _8086:parse(byte_a, byte_b)
@@ -68,11 +106,11 @@ function _8086:parse(byte_a, byte_b)
     -- return str_op_code .. " " .. str_op_a .. ", " .. str_op_b
 end
 
-function _8086:get_op_code_config(input)
-    assert(_8086.OP_CODE[input] ~= nil, "\n\n(!) No parser found for instruction: " .. input .. " (!)\n\n")
-    local op_config = _8086:get_op_config_from_prefix(input)
-    return _8086.OP_CODE[input]
-end
+-- function _8086:get_op_code_config(input)
+--     assert(_8086.OP_CODES[input] ~= nil, "\n\n(!) No parser found for instruction: " .. input .. " (!)\n\n")
+--     local op_config = _8086:get_op_config_from_prefix(input)
+--     return _8086.OP_CODES[input]
+-- end
 
 function _8086:write_asm(file_name, asm_string)
     -- "open a new file ion write mode (w)"
@@ -82,29 +120,20 @@ function _8086:write_asm(file_name, asm_string)
         new_file:write(asm_string)
         new_file:close();
     end
-
-    print("COMPILED ASM TO: " .. file_url)
-    print("data: " .. asm_string)
-end
-
-function _8086:to_binary(number)
-    local remainder = ""
-    while number > 0 do
-        remainder = tostring(number % 2) .. remainder
-        number = math.floor(number / 2)
-    end
-    return remainder
 end
 
 -- Identify what type of command we are parsing. Return an OP_CONFIG if a match is found
-function _8086:get_cmd_config(input)
-    local i2b = _8086:to_binary(input) -- input to binary
+function _8086:init_cmd(input)
+    -- input to binary
+    local i2b = _8086:to_binary(input)
 
-    for key, value in pairs(_8086.OP_CODE) do
+    for key, value in pairs(_8086.OP_CODES) do
         local test_chunk = string.sub(i2b, 1, #key)
         if (test_chunk == key) then
-            print("CMD[" .. _8086.cmd_counter .. "] --> " .. test_chunk .. " = " .. value.id)
-            return value
+            print("\nCMD[".. _8086.cmd_counter.. "] " .. value.id)
+            _8086.CMD_STATE = value
+            _8086.CMD_BINARY = _8086:bytes_as_binary(_8086.byte_index, _8086.CMD_STATE.min_bytes)
+            return
         end
     end
 
@@ -113,20 +142,88 @@ function _8086:get_cmd_config(input)
     return nil
 end
 
+function _8086:get_file_bytes_as_binary(index, length)
+    local str = ""
+    for i = index, length do
+        str = str .. _8086:to_binary(string.byte(_8086.file_data, index, index))
+    end
+    return str
+end
+
 function _8086:parse_mov_REG_2_REG(input)
     print("PARSING REG_2_REG")
 end
--- function _8086:get_cmd_bytes_required(intpu)
+
+function _8086:get_cmd_field(key)
+    local field_lookup = _8086.CMD_STATE.fields[key]
+    assert(field_lookup ~= nil, "Unable to find field in cmd_state (" .. _8086.CMD_STATE.id .. ")")
+    -- get mod binary
+    local start_index = field_lookup[1]
+    local end_index = start_index + (field_lookup[2] - 1)
+    local result = string.sub(_8086.CMD_BINARY, start_index, end_index)
+    -- use them to find out how many bytes are required in MOD_LOOKUP
+    -- tweak if needed (special 16bit flag)
+    return result
+end
+
+function _8086:get_required_bytes()
+    local mod = _8086:get_cmd_field("mod")
+    local extra_bytes = _8086.MOD_LOOKUP[mod].extra_bytes
+
+
+    -- special exception, if MOD is 00, check R_M == 110 (for 16bit)
+    if (mod == "00") then
+        local r_m = _8086:get_cmd_field("r_m")
+        if (r_m == "110") then
+            extra_bytes = 2
+        end
+    end
+
+    return _8086.CMD_STATE.min_bytes + extra_bytes
+end
 
 --//////////////////////////////////////////////
 -- DEFINITIONS
 --//////////////////////////////////////////////
-_8086.OP_CODE = {
-    ["100010"] =    { asm_type = "mov", parser = _8086.parse_mov_REG_2_REG, id = "MOV REG_2_REG"},
-    ["1100011"] =   { asm_type = "mov", id = "MOV IMM_2_RM"},
-    ["1011"] =      { asm_type = "mov", id = "MOV IMM 2 REG"},
+
+-- FIELD data is stored as a START_INDEX, LENGTH
+-- e.g. 100010.w is located at 8, length of 1
+_8086.OP_CODES = {
+    ["100010"] = {
+        type = "mov",
+        min_bytes = 2,
+        id = "MOV REG_2_REG",
+        fields = {
+            ["d"] = { 7, 1 },
+            ["w"] = { 8, 1 },
+            ["mod"] = { 9, 2 },
+            ["reg"] = { 11, 3 },
+            ["r_m"] = { 14, 4 },
+        },
+        parser = _8086.parse_mov_REG_2_REG,
+    },
+    ["1100011"] = { type = "mov", id = "MOV IMM_2_RM" },
+    ["1011"] = { type = "mov", id = "MOV IMM 2 REG" },
+}
+_8086.REG_ENCODING_MOD_00 = {
+    extra_bytes = 0, -- unless R_M is 110 (TODO)
+    -- ["000"] = "(bx) + (si)",
+    -- ["001"] = "(bx) + (di)",
+    -- ["010"] = "(bp) + (si)",
+    -- ["011"] = "(bp) + (di)",
+    -- ["100"] = "(si)",
+    -- ["101"] = "(di)",
+    -- ["110"] = "direct address",
+    -- ["111"] = "(bx)",
+}
+_8086.REG_ENCODING_MOD_01 = {
+    extra_bytes = 1, -- 8bit follows
+}
+_8086.REG_ENCODING_MOD_10 = {
+    extra_bytes = 2, -- 16bit follows
 }
 _8086.REG_ENCODING_MOD_11 = {
+    extra_bytes = 0, -- 16bit follows
     ["000"] = { "al", "ax" },
     ["001"] = { "cl", "cx" },
     ["010"] = { "dl", "dx" },
@@ -136,17 +233,9 @@ _8086.REG_ENCODING_MOD_11 = {
     ["110"] = { "dh", "si" },
     ["111"] = { "bh", "di" },
 }
-_8086.REG_ENCODING_MOD_00 = {
-    ["000"] = "(bx) + (si)",
-    ["001"] = "(bx) + (di)",
-    ["010"] = "(bp) + (si)",
-    ["011"] = "(bp) + (di)",
-    ["100"] = "(si)",
-    ["101"] = "(di)",
-    ["110"] = "direct address",
-    ["111"] = "(bx)",
-}
 _8086.MOD_LOOKUP = {
     ["00"] = _8086.REG_ENCODING_MOD_00,
+    ["01"] = _8086.REG_ENCODING_MOD_01,
+    ["10"] = _8086.REG_ENCODING_MOD_10,
     ["11"] = _8086.REG_ENCODING_MOD_11,
 }

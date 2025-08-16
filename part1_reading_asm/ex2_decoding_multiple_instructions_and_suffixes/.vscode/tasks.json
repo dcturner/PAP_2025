@@ -18,6 +18,21 @@
             },
             "problemMatcher": [],
             "detail": "Run main.lua with Lua interpreter"
+        },
+        {
+            "label": "Open main.lua",
+            "type": "shell",
+            "command": "code",
+            "args": ["${workspaceFolder}/main.lua"],
+            "group": "build",
+            "presentation": {
+                "echo": false,
+                "reveal": "never",
+                "focus": false,
+                "panel": "shared"
+            },
+            "problemMatcher": [],
+            "detail": "Open main.lua in the editor"
         }
     ]
 }
