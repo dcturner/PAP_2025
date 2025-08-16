@@ -46,7 +46,7 @@ function _8086:parse_to_asm(file_url, file_name)
     end
 
     -- "open a new file ion write mode (w)"
-    local file_url = "output/" .. file_name .. ".asm"
+    local file_url = "output/_dt_" .. file_name .. ".asm"
     local new_file = io.open(file_url, "w")
     if (new_file) then
         new_file:write(asm_string)
