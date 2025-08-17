@@ -35,7 +35,7 @@ function _8086:parse_to_asm(file_url, file_name)
 
         -- store the string in the cmd list
         local final_line = _8086.CMD_STATE.type .. " " .. str_op_a .. ", " .. str_op_b
-        print("CMD[" .. _8086.cmd_counter .. "] --> " .. final_line )
+        print("CMD[" .. _8086.cmd_counter .. "] --> " .. final_line)
         table.insert(_8086.CMD_LIST, final_line)
 
         -- march on...
@@ -130,9 +130,11 @@ function _8086:init_cmd(input)
     for key, value in pairs(_8086.OP_CODES) do
         local test_chunk = string.sub(i2b, 1, #key)
         if (test_chunk == key) then
-            print("\nCMD[".. _8086.cmd_counter.. "] " .. value.id)
             _8086.CMD_STATE = value
             _8086.CMD_BINARY = _8086:bytes_as_binary(_8086.byte_index, _8086.CMD_STATE.min_bytes)
+            print("\nCMD[" .. _8086.cmd_counter .. "] " .. value.id .. "  " .. key)
+            print(_8086.CMD_BINARY)
+            _8086:log_all_fields()
             return
         end
     end
@@ -140,6 +142,12 @@ function _8086:init_cmd(input)
     -- Fail gracefully
     assert(false, "no OP_CODE found with sig matching: " .. i2b)
     return nil
+end
+
+function _8086:log_all_fields()
+    for key, value in pairs(_8086.CMD_STATE.fields) do
+        print("  - " .. key .. ": " .. _8086:get_cmd_field(key))
+    end
 end
 
 function _8086:get_file_bytes_as_binary(index, length)
@@ -156,7 +164,7 @@ end
 
 function _8086:get_cmd_field(key)
     local field_lookup = _8086.CMD_STATE.fields[key]
-    assert(field_lookup ~= nil, "Unable to find field in cmd_state (" .. _8086.CMD_STATE.id .. ")")
+    assert(field_lookup ~= nil, "Unable to find field: ["..key.."] in cmd_state (" .. _8086.CMD_STATE.id .. ")")
     -- get mod binary
     local start_index = field_lookup[1]
     local end_index = start_index + (field_lookup[2] - 1)
@@ -167,18 +175,19 @@ function _8086:get_cmd_field(key)
 end
 
 function _8086:get_required_bytes()
-    local mod = _8086:get_cmd_field("mod")
-    local extra_bytes = _8086.MOD_LOOKUP[mod].extra_bytes
+    local extra_bytes = 0
 
-
-    -- special exception, if MOD is 00, check R_M == 110 (for 16bit)
-    if (mod == "00") then
-        local r_m = _8086:get_cmd_field("r_m")
-        if (r_m == "110") then
-            extra_bytes = 2
+    if (_8086.CMD_STATE.has_mod)then
+        local mod = _8086:get_cmd_field("mod")
+        extra_bytes = _8086.MOD_LOOKUP[mod].extra_bytes
+        -- special exception, if MOD is 00, check R_M == 110 (for 16bit)
+        if (mod == "00") then
+            local r_m = _8086:get_cmd_field("r_m")
+            if (r_m == "110") then
+                extra_bytes = 2
+            end
         end
     end
-
     return _8086.CMD_STATE.min_bytes + extra_bytes
 end
 
@@ -192,6 +201,7 @@ _8086.OP_CODES = {
     ["100010"] = {
         type = "mov",
         min_bytes = 2,
+        has_mod = true,
         id = "MOV REG_2_REG",
         fields = {
             ["d"] = { 7, 1 },
@@ -202,9 +212,29 @@ _8086.OP_CODES = {
         },
         parser = _8086.parse_mov_REG_2_REG,
     },
-    -- TODO: Add configs for other MOV types
-    ["1100011"] = { type = "mov", id = "MOV IMM_2_RM" },
-    ["1011"] = { type = "mov", id = "MOV IMM_2_REG" },
+    ["1100011"] = {
+        type = "mov",
+        min_bytes = 2,
+        has_mod = true,
+        id = "MOV IMM_2_RM",
+        fields = {
+            ["w"] = { 8, 1 },
+            ["mod"] = { 9, 2 },
+            ["r_m"] = { 14, 4 },
+        },
+        parser = _8086.parse_mov_REG_2_REG,
+    },
+    ["1011"] = {
+        type = "mov",
+        min_bytes = 1,
+        has_mod = false,
+        id = "MOV IMM_2_REG",
+        fields = {
+            ["w"] = { 5, 1 },
+            ["reg"] = { 7, 1 },
+        },
+        parser = _8086.parse_mov_REG_2_REG,
+    },
 }
 _8086.REG_ENCODING_MOD_00 = {
     extra_bytes = 0, -- unless R_M is 110 (TODO)
