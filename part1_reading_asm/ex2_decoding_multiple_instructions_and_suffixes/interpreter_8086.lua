@@ -19,30 +19,22 @@ function _8086:parse_to_asm(file_url, file_name)
     _8086.byte_index = 1
     _8086.cmd_counter = 1
 
+    ----------------------------------------------------- PARSING LOOP
     while (_8086.byte_index <= #_8086.file_data) do
         -- init and setup the basic OP type
         _8086:init_cmd(string.byte(_8086.file_data, _8086.byte_index, _8086.byte_index))
+        local str_result = _8086.CMD_STATE.type
+        _8086.op_a = _8086.CMD_STATE:operand_a()
+        _8086.op_b = _8086.CMD_STATE:operand_b()
+        str_result = str_result .. " " .. _8086.op_a .. ", " .. _8086.op_b
+        print("CMD[" .. _8086.cmd_counter .. "] --> " .. str_result)
+        table.insert(_8086.CMD_LIST, str_result)
 
-        local bytes_req = _8086:get_required_bytes()
-
-        -- add next two
-        local mod = _8086:get_cmd_field("mod")
-        local reg = _8086:get_cmd_field("reg")
-        local r_m = _8086:get_cmd_field("r_m")
-        local w = _8086:get_cmd_field("w")
-        local str_op_a = _8086.MOD_LOOKUP[mod][r_m][w + 1]
-        local str_op_b = _8086.MOD_LOOKUP[mod][reg][w + 1]
-
-        -- store the string in the cmd list
-        local final_line = _8086.CMD_STATE.type .. " " .. str_op_a .. ", " .. str_op_b
-        print("CMD[" .. _8086.cmd_counter .. "] --> " .. final_line)
-        table.insert(_8086.CMD_LIST, final_line)
-
-        -- march on...
-        _8086.byte_index = _8086.byte_index + bytes_req
+        -- march on --
+        _8086.byte_index = _8086.byte_index + _8086:cur_cmd_req_bytes()
         _8086.cmd_counter = _8086.cmd_counter + 1
     end
-    print("PARSE COMPLETE: " .. _8086.cmd_counter .. " command lines")
+    print("PARSE COMPLETE: " .. (_8086.cmd_counter - 1) .. " command lines")
 
 
     -- Build the master string and WRITE it to ASM
@@ -86,32 +78,6 @@ function _8086:bytes_as_binary(index, length)
     return result
 end
 
-function _8086:parse(byte_a, byte_b)
-    -- local cmd = {
-    --     -- A
-    --     op_code = string.sub(byte_a, 1, 6),
-    --     d = string.sub(byte_a, 7, 7),
-    --     w = string.sub(byte_a, 8, 8),
-
-    --     -- B
-    --     mod = string.sub(byte_b, 1, 2),
-    --     reg = string.sub(byte_b, 3, 5),
-    --     r_m = string.sub(byte_b, 6, 8)
-    -- }
-
-    -- -- Parse the 3 separate parts and concat them into an asm instruction line
-    -- local str_op_code = "" .. _8086:get_op_code_config(cmd.op_code).asm_cmd
-    -- local str_op_a = _8086.MOD_LOOKUP[cmd.mod][cmd.r_m][cmd.w + 1]
-    -- local str_op_b = _8086.MOD_LOOKUP[cmd.mod][cmd.reg][cmd.w + 1]
-    -- return str_op_code .. " " .. str_op_a .. ", " .. str_op_b
-end
-
--- function _8086:get_op_code_config(input)
---     assert(_8086.OP_CODES[input] ~= nil, "\n\n(!) No parser found for instruction: " .. input .. " (!)\n\n")
---     local op_config = _8086:get_op_config_from_prefix(input)
---     return _8086.OP_CODES[input]
--- end
-
 function _8086:write_asm(file_name, asm_string)
     -- "open a new file ion write mode (w)"
     local file_url = "output/" .. file_name .. ".asm"
@@ -131,23 +97,21 @@ function _8086:init_cmd(input)
         local test_chunk = string.sub(i2b, 1, #key)
         if (test_chunk == key) then
             _8086.CMD_STATE = value
-            _8086.CMD_BINARY = _8086:bytes_as_binary(_8086.byte_index, _8086.CMD_STATE.min_bytes)
+            _8086:allocate_cmd_binary()
             print("\nCMD[" .. _8086.cmd_counter .. "] " .. value.id .. "  " .. key)
             print(_8086.CMD_BINARY)
-            _8086:log_all_fields()
+            -- _8086:log_all_fields()
             return
         end
     end
-
     -- Fail gracefully
     assert(false, "no OP_CODE found with sig matching: " .. i2b)
     return nil
 end
 
-function _8086:log_all_fields()
-    for key, value in pairs(_8086.CMD_STATE.fields) do
-        print("  - " .. key .. ": " .. _8086:get_cmd_field(key))
-    end
+function _8086:allocate_cmd_binary()
+    _8086.CMD_BINARY = _8086:bytes_as_binary(_8086.byte_index, _8086.CMD_STATE.min_bytes)
+    _8086.CMD_BINARY = _8086:bytes_as_binary(_8086.byte_index, _8086:cur_cmd_req_bytes())
 end
 
 function _8086:get_file_bytes_as_binary(index, length)
@@ -158,13 +122,15 @@ function _8086:get_file_bytes_as_binary(index, length)
     return str
 end
 
-function _8086:parse_mov_REG_2_REG(input)
-    print("PARSING REG_2_REG")
+function _8086:log_all_fields()
+    for key, value in pairs(_8086.CMD_STATE.fields) do
+        print("  - " .. key .. ": " .. _8086:field(key))
+    end
 end
 
-function _8086:get_cmd_field(key)
+function _8086:field(key)
     local field_lookup = _8086.CMD_STATE.fields[key]
-    assert(field_lookup ~= nil, "Unable to find field: ["..key.."] in cmd_state (" .. _8086.CMD_STATE.id .. ")")
+    assert(field_lookup ~= nil, "Unable to find field: [" .. key .. "] in cmd_state (" .. _8086.CMD_STATE.id .. ")")
     -- get mod binary
     local start_index = field_lookup[1]
     local end_index = start_index + (field_lookup[2] - 1)
@@ -174,26 +140,86 @@ function _8086:get_cmd_field(key)
     return result
 end
 
-function _8086:get_required_bytes()
-    local extra_bytes = 0
+function _8086:data_read(id)
 
-    if (_8086.CMD_STATE.has_mod)then
-        local mod = _8086:get_cmd_field("mod")
-        extra_bytes = _8086.MOD_LOOKUP[mod].extra_bytes
+end
+
+function _8086:cur_cmd_req_bytes()
+    local total_bytes = _8086.CMD_STATE.min_bytes
+    total_bytes = total_bytes + _8086:mod_bytes_required()
+    total_bytes = total_bytes + _8086:imm_data_bytes_required()
+    return total_bytes
+end
+
+function _8086:mod_bytes_required()
+    if (_8086.CMD_STATE.has_mod) then
+        local mod = _8086:field("mod")
+        local extra_bytes = _8086.MOD_LOOKUP[mod].extra_bytes
         -- special exception, if MOD is 00, check R_M == 110 (for 16bit)
         if (mod == "00") then
-            local r_m = _8086:get_cmd_field("r_m")
+            local r_m = _8086:field("r_m")
             if (r_m == "110") then
                 extra_bytes = 2
             end
         end
+        return extra_bytes
+    else
+        return 0
     end
-    return _8086.CMD_STATE.min_bytes + extra_bytes
+end
+
+function _8086:imm_data_bytes_required()
+    if (_8086.CMD_STATE.has_immediate_data) then
+        local w = _8086:field("w")
+        if w=="0" then
+            return 1
+        else
+            return 2
+        end
+    else
+        return 0
+    end
 end
 
 --//////////////////////////////////////////////
 -- DEFINITIONS
 --//////////////////////////////////////////////
+
+-- REGISTER to REGISTER
+function _8086:REG_2_REG_operand_a()
+    return _8086.MOD_LOOKUP[_8086:field("mod")][_8086:field("r_m")][_8086:field("w") + 1]
+end
+
+function _8086:REG_2_REG_operand_b()
+    return _8086.MOD_LOOKUP[_8086:field("mod")][_8086:field("reg")][_8086:field("w") + 1]
+end
+
+-- IMMEDIATE to REGISTER / MEMORY
+function _8086:IMM_2_RM_operand_a()
+    assert(false, "IMM_2_RM (a) not implemented yet")
+    return ""
+end
+
+function _8086:IMM_2_RM_operand_b()
+    assert(false, "IMM_2_RM (b) not implemented yet")
+    return ""
+end
+
+-- IMMEDIATE to REGISTER
+function _8086:IMM_2_REG_operand_a()
+    return _8086.REG_LOOKUP[_8086:field("reg")][_8086:field("w") + 1]
+end
+
+function _8086:IMM_2_REG_operand_b()
+    local data = nil
+    local bytes_required = _8086:imm_data_bytes_required()
+    if bytes_required == 1 then
+        data =  _8086:field("data_8-bit")
+    else
+        data = _8086:field("data_16-bit")
+    end
+    return tonumber(data,2)
+end
 
 -- FIELD data is stored as a START_INDEX, LENGTH
 -- e.g. 100010.w is located at 8, length of 1
@@ -202,38 +228,46 @@ _8086.OP_CODES = {
         type = "mov",
         min_bytes = 2,
         has_mod = true,
+        has_immediate_data = false,
         id = "MOV REG_2_REG",
         fields = {
             ["d"] = { 7, 1 },
             ["w"] = { 8, 1 },
             ["mod"] = { 9, 2 },
             ["reg"] = { 11, 3 },
-            ["r_m"] = { 14, 4 },
+            ["r_m"] = { 14, 3 },
         },
-        parser = _8086.parse_mov_REG_2_REG,
+        operand_a = _8086.REG_2_REG_operand_a,
+        operand_b = _8086.REG_2_REG_operand_b,
     },
     ["1100011"] = {
         type = "mov",
         min_bytes = 2,
         has_mod = true,
+        has_immediate_data = true,
         id = "MOV IMM_2_RM",
         fields = {
             ["w"] = { 8, 1 },
             ["mod"] = { 9, 2 },
-            ["r_m"] = { 14, 4 },
+            ["r_m"] = { 14, 3 },
         },
-        parser = _8086.parse_mov_REG_2_REG,
+        operand_a = _8086.IMM_2_RM_operand_a,
+        operand_b = _8086.IMM_2_RM_operand_b,
     },
     ["1011"] = {
         type = "mov",
         min_bytes = 1,
         has_mod = false,
+        has_immediate_data = true,
         id = "MOV IMM_2_REG",
         fields = {
             ["w"] = { 5, 1 },
-            ["reg"] = { 7, 1 },
+            ["reg"] = { 6, 3 },
+            ["data_8-bit"] = { 9, 8 },
+            ["data_16-bit"] = { 9, 16 },
         },
-        parser = _8086.parse_mov_REG_2_REG,
+        operand_a = _8086.IMM_2_REG_operand_a,
+        operand_b = _8086.IMM_2_REG_operand_b,
     },
 }
 _8086.REG_ENCODING_MOD_00 = {
@@ -269,4 +303,14 @@ _8086.MOD_LOOKUP = {
     ["01"] = _8086.REG_ENCODING_MOD_01,
     ["10"] = _8086.REG_ENCODING_MOD_10,
     ["11"] = _8086.REG_ENCODING_MOD_11,
+}
+_8086.REG_LOOKUP = {
+    ["000"] = { "al", "ax" },
+    ["001"] = { "cl", "cx" },
+    ["010"] = { "dl", "dx" },
+    ["011"] = { "bl", "bx" },
+    ["100"] = { "ah", "sp" },
+    ["101"] = { "ch", "bp" },
+    ["110"] = { "dh", "si" },
+    ["111"] = { "bh", "di" },
 }
